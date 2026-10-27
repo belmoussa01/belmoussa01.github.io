@@ -2,28 +2,18 @@
 
 /* =============================================
    KAMEL BELMOUSSA — app.js
-   Portfolio v3 — veille cliquable + filtres réactifs
+   Portfolio v4 — navigation, thème, veille, contact
 ============================================= */
 
 /* ========== Helpers ========== */
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
-/* ========== Onglets projets ========== */
-function initTabs() {
-  const tabs = $$(".tabs .tab");
-  if (!tabs.length) return;
-  tabs.forEach(btn => {
-    btn.addEventListener("click", () => {
-      $$(".tabs .tab").forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
-      $$(".cards-grid").forEach(g => g.classList.add("hidden"));
-      const target = btn.getAttribute("data-target");
-      const el = target ? $(target) : null;
-      if (el) el.classList.remove("hidden");
-    });
-  });
-}
+// Échappe le texte venant des flux RSS avant de l'injecter dans le HTML
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({
+  "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+}[c]));
+const safeUrl = (u) => /^https?:\/\//i.test(u || "") ? u : "";
 
 /* ========== Veille — flux RSS ========== */
 
@@ -130,30 +120,34 @@ function renderVeille(items) {
       if (!isNaN(d)) dateStr = d.toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" });
     } catch (e) {}
     const desc = (it.desc || "").trim();
-    const safeTitle = it.title || "Sans titre";
+    const safeTitle = esc(it.title || "Sans titre");
+    const theme = esc(it.theme);
+    const source = esc(it.source);
+    const link = safeUrl(it.link);
+    const descHtml = desc ? `<p>${esc(desc)}${desc.length >= 200 ? "…" : ""}</p>` : "<p></p>";
 
-    if (it.link) {
+    if (link) {
       return `
-        <a class="veille-item" data-theme="${it.theme}" href="${it.link}" target="_blank" rel="noopener">
-          <span class="veille-theme">${it.theme}</span>
+        <a class="veille-item" data-theme="${theme}" href="${esc(link)}" target="_blank" rel="noopener">
+          <span class="veille-theme">${theme}</span>
           <div class="veille-meta">
-            <span class="veille-source">${it.source}</span>
+            <span class="veille-source">${source}</span>
             <span>${dateStr}</span>
           </div>
           <h3>${safeTitle}</h3>
-          ${desc ? `<p>${desc}${desc.length >= 200 ? "…" : ""}</p>` : "<p></p>"}
+          ${descHtml}
           <span class="read-more">Lire la source →</span>
         </a>`;
     }
     return `
-      <article class="veille-item" data-theme="${it.theme}">
-        <span class="veille-theme">${it.theme}</span>
+      <article class="veille-item" data-theme="${theme}">
+        <span class="veille-theme">${theme}</span>
         <div class="veille-meta">
-          <span class="veille-source">${it.source}</span>
+          <span class="veille-source">${source}</span>
           <span>${dateStr}</span>
         </div>
         <h3>${safeTitle}</h3>
-        ${desc ? `<p>${desc}${desc.length >= 200 ? "…" : ""}</p>` : "<p></p>"}
+        ${descHtml}
       </article>`;
   }).join("");
 }
@@ -238,46 +232,39 @@ async function initVeille() {
   }
 }
 
-/* ========== Mobile sidebar toggle ========== */
-function initMobile() {
-  const btn = $("#mobile-toggle");
+/* ========== Menu mobile ========== */
+function initNav() {
+  const btn = $("#nav-toggle");
   if (!btn) return;
-  btn.addEventListener("click", () => {
-    document.body.classList.toggle("sidebar-open");
-  });
-  $$(".sidebar nav a").forEach(a => {
-    a.addEventListener("click", () => document.body.classList.remove("sidebar-open"));
-  });
+  const setOpen = (open) => {
+    document.body.classList.toggle("nav-open", open);
+    btn.setAttribute("aria-expanded", String(open));
+    btn.setAttribute("aria-label", open ? "Fermer le menu" : "Ouvrir le menu");
+  };
+  btn.addEventListener("click", () => setOpen(!document.body.classList.contains("nav-open")));
+  $$(".site-nav a").forEach(a => a.addEventListener("click", () => setOpen(false)));
   document.addEventListener("click", (e) => {
-    if (document.body.classList.contains("sidebar-open")) {
-      if (!e.target.closest(".sidebar") && !e.target.closest("#mobile-toggle")) {
-        document.body.classList.remove("sidebar-open");
-      }
-    }
+    if (!e.target.closest(".site-header")) setOpen(false);
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") setOpen(false);
   });
 }
 
-/* ========== Theme toggle ========== */
+/* ========== Thème clair / sombre ========== */
+// Sans choix enregistré, on suit le thème du système (géré en CSS).
 function initTheme() {
   const btn = $("#theme-toggle");
+  if (!btn) return;
   const root = document.documentElement;
+  const current = () => root.getAttribute("data-theme") ||
+    (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
 
-  function apply(theme) {
-    root.setAttribute("data-theme", theme);
-    if (btn) btn.textContent = theme === "dark" ? "☀️" : "🌙";
-    try { localStorage.setItem("theme", theme); } catch (e) {}
-  }
-
-  let saved = null;
-  try { saved = localStorage.getItem("theme"); } catch (e) {}
-  apply(saved || "dark");
-
-  if (btn) {
-    btn.addEventListener("click", () => {
-      const current = root.getAttribute("data-theme");
-      apply(current === "dark" ? "light" : "dark");
-    });
-  }
+  btn.addEventListener("click", () => {
+    const next = current() === "dark" ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    try { localStorage.setItem("theme", next); } catch (e) {}
+  });
 }
 
 /* ========== Lancement ========== */
@@ -343,9 +330,8 @@ function initContact() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-  initTabs();
   initVeille();
-  initMobile();
+  initNav();
   initTheme();
   initContact();
 });
